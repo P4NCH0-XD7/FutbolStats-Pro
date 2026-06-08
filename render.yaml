@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: futbol-stats-pro-api
+    runtime: node
+    plan: free
+    buildCommand: npm ci
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: futbol-stats-pro-db
+          property: connectionString
+
+databases:
+  - name: futbol-stats-pro-db
+    plan: free
+    databaseName: futbol_db
+    user: futbol_user
