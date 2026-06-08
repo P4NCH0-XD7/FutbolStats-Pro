@@ -1,121 +1,194 @@
 # FutbolStats Pro
 
-API Node.js/Express con PostgreSQL para consultar la tabla de posiciones.
+API Node.js/Express con PostgreSQL para consultar una tabla de posiciones de futbol. El proyecto incluye contenedorizacion local, pruebas automatizadas con Jest, pipeline de CI en GitHub Actions y Blueprint de Render para desplegar la API junto con una base de datos PostgreSQL gestionada.
 
 ## Arquitectura
 
-El diagrama de despliegue esta guardado en `arquitectura.png`.
+El diagrama de despliegue esta disponible en la raiz del repositorio:
 
-Flujo esperado:
-
-1. Maquina local con Node.js y Docker Compose.
-2. GitHub como repositorio remoto.
-3. GitHub Actions ejecutando CI con Node 24, PostgreSQL temporal y Jest.
-4. Render Web Service ejecutando la API.
-5. Render PostgreSQL como base de datos gestionada.
-
-## Errores criticos corregidos
-
-1. La conexion por defecto a PostgreSQL quedaba fija a `localhost`, lo que fallaba dentro del contenedor. Se usa `DATABASE_URL` y Compose apunta a `db_futbol`.
-2. El workflow no garantizaba `NODE_ENV=test`. El CI ahora inyecta el entorno de test.
-3. La prueba tenia un typo en Jest: `colose`. Se corrigio a la asercion correcta.
-4. El Dockerfile usaba una imagen antigua y pesada. Ahora usa `node:24-slim`.
-5. El Dockerfile exponia `8080` mientras la app usa `3000`. Ahora expone `3000`.
-6. El volumen de PostgreSQL apuntaba a `/data/db`, ruta de MongoDB. Ahora usa `/var/lib/postgresql/data`.
-7. Faltaba automatizacion de nube/CI completa. Se agregaron `.github/workflows/ci.yml` y `render.yaml`.
-
-## Ejecucion local
-
-```bash
-npm install
-npm test
+```text
+arquitectura.png
 ```
 
-## Ejecucion con Docker
+Flujo de despliegue:
 
-Para construir la imagen del backend y levantar la arquitectura completa con PostgreSQL:
+```text
+Maquina local -> GitHub -> GitHub Actions CI -> Render Web Service + Render PostgreSQL
+```
+
+## Requisitos para ejecucion local
+
+Para ejecutar la arquitectura completa localmente solo se requiere:
+
+- Docker Desktop
+- Git
+
+No es necesario instalar PostgreSQL localmente. Docker Compose levanta el contenedor de PostgreSQL.
+
+No es necesario ejecutar `npm install` para correr la API con Docker. El `Dockerfile` instala las dependencias dentro de la imagen usando:
+
+```dockerfile
+RUN npm ci --omit=dev
+```
+
+## Ejecutar con Docker Compose
+
+Clonar el repositorio:
+
+```bash
+git clone URL_DEL_REPOSITORIO
+cd futbol-stats-pro
+```
+
+Construir la imagen y levantar API + PostgreSQL:
 
 ```bash
 docker compose up --build
 ```
 
-Este comando crea y ejecuta:
-
-- Contenedor `futbol-backend` con la API Node.js/Express.
-- Contenedor `futbol-postgres` con PostgreSQL.
-- Red interna de Docker para que la API se conecte a PostgreSQL usando `db_futbol`.
-- Volumen `postgres_data` para persistir los datos de la base.
-
-Para ejecutar los contenedores en segundo plano:
+Tambien puede ejecutarse en segundo plano:
 
 ```bash
 docker compose up --build -d
 ```
 
-Endpoints:
+El comando anterior crea:
 
-```bash
-GET http://localhost:3000/api/health
-GET http://localhost:3000/api/posiciones
+- `futbol-backend`: contenedor de la API Node.js/Express.
+- `futbol-postgres`: contenedor de PostgreSQL.
+- `postgres_data`: volumen persistente para la base de datos.
+- Red interna de Compose para que la API use `db_futbol` como host de PostgreSQL.
+
+## Probar la API
+
+Health check:
+
+```text
+http://localhost:3000/api/health
 ```
 
-Para ver los logs:
+Respuesta esperada:
+
+```json
+{
+  "status": "UP",
+  "database": "CONNECTED"
+}
+```
+
+Tabla de posiciones:
+
+```text
+http://localhost:3000/api/posiciones
+```
+
+Respuesta esperada:
+
+```json
+[
+  {
+    "id": 1,
+    "nombre": "ITP F.C.",
+    "puntos": 9,
+    "diferencia_goles": 5
+  }
+]
+```
+
+## Comandos utiles de Docker
+
+Ver logs:
 
 ```bash
 docker compose logs -f
 ```
 
-Para detener los contenedores:
+Detener contenedores:
 
 ```bash
 docker compose down
 ```
 
-Para detenerlos y borrar tambien el volumen de PostgreSQL:
+Detener contenedores y borrar el volumen de PostgreSQL:
 
 ```bash
 docker compose down -v
 ```
 
-Para reconstruir solo la imagen del backend:
+Reconstruir solo la imagen del backend:
 
 ```bash
 docker compose build backend
 ```
 
-## CI
+## Ejecutar pruebas
 
-El workflow `.github/workflows/ci.yml` instala dependencias con `npm ci`, levanta PostgreSQL como servicio temporal, configura `NODE_ENV=test` y ejecuta `npm test`.
+Para ejecutar las pruebas desde la maquina local si se requiere instalar las dependencias de desarrollo, porque Jest y Supertest no se instalan dentro de la imagen de produccion:
 
-## Render
+```bash
+npm install
+```
 
-El archivo `render.yaml` crea:
+Con Docker Compose corriendo, configurar variables de entorno y ejecutar Jest.
+
+En PowerShell:
+
+```powershell
+$env:NODE_ENV="test"
+$env:DATABASE_URL="postgresql://postgres:password123@localhost:5432/futbol_db"
+npm.cmd test
+```
+
+En Bash:
+
+```bash
+NODE_ENV=test DATABASE_URL=postgresql://postgres:password123@localhost:5432/futbol_db npm test
+```
+
+## CI con GitHub Actions
+
+El workflow esta en:
+
+```text
+.github/workflows/ci.yml
+```
+
+El pipeline:
+
+1. Usa Node.js 24.
+2. Instala dependencias con `npm ci`.
+3. Levanta PostgreSQL temporal como servicio de GitHub Actions.
+4. Inyecta `NODE_ENV=test`.
+5. Inyecta `DATABASE_URL`.
+6. Ejecuta `npm test`.
+
+## Despliegue en Render
+
+El Blueprint esta en:
+
+```text
+render.yaml
+```
+
+El archivo crea:
 
 - Web Service: `futbol-stats-pro-api`
 - PostgreSQL gestionado: `futbol-stats-pro-db`
-- Variable `DATABASE_URL` tomada del `connectionString` interno de Render
-- `healthCheckPath: /api/health`
+- Variable `DATABASE_URL` tomada automaticamente del `connectionString` de Render PostgreSQL
+- `healthCheckPath` apuntando a `/api/health`
 
-En Render, despues de crear el Blueprint, activar deploys con la opcion `After CI check pass`.
+Despues de crear el Blueprint en Render, activar la opcion:
 
-## Reparto sugerido para la pareja
+```text
+After CI check pass
+```
 
-Integrante 1:
+## Errores criticos corregidos
 
-- Corregir API, conexion a base de datos y pruebas.
-- Commit sugerido: `fix: repair api database connection and tests`
-- Archivos: `src/app.js`, `src/config/db.js`, `tests/app.test.js`, `package.json`
-
-Integrante 2:
-
-- Corregir Docker, Compose, CI, Render y arquitectura.
-- Commit sugerido: `fix: configure docker ci render and architecture`
-- Archivos: `Dockerfile`, `docker-compose.yml`, `.dockerignore`, `.github/workflows/ci.yml`, `render.yaml`, `arquitectura.png`, `.gitignore`, `README.md`
-
-## Guion corto para el video
-
-1. Mostrar `arquitectura.png` y explicar el flujo local -> GitHub -> Actions -> Render.
-2. Explicar los 7 errores de la seccion anterior.
-3. Mostrar GitHub Actions en verde.
-4. Abrir la URL publica de Render en `/api/health`.
-5. Abrir la URL publica de Render en `/api/posiciones` y mostrar la tabla de posiciones.
+1. La API usaba `localhost` para conectarse a PostgreSQL dentro del contenedor. Se corrigio usando `DATABASE_URL` y el host interno `db_futbol` en Compose.
+2. El entorno de pruebas no estaba garantizado en CI. Se agrego `NODE_ENV=test` en GitHub Actions.
+3. La prueba tenia un typo en la asercion de Jest: `colose`. Se corrigio la asercion.
+4. El Dockerfile usaba una imagen antigua y pesada. Se actualizo a `node:24-slim`.
+5. El Dockerfile exponia el puerto incorrecto. Se corrigio a `3000`.
+6. El volumen de PostgreSQL apuntaba a `/data/db`, ruta propia de MongoDB. Se corrigio a `/var/lib/postgresql/data`.
+7. Faltaba automatizacion de CI y nube. Se agregaron `.github/workflows/ci.yml` y `render.yaml`.
